@@ -165,6 +165,7 @@ int main(void)
 
 	 bufPointer++;
 
+	 // Main Inputs (Steering wheel buttons)
 	 if (bufPointer >= MA_BUFFER_SIZE){
 		 tempSum1 = 0;
 		 tempSum2 = 0;
@@ -203,15 +204,120 @@ int main(void)
 		 }
 		 // do we need to update the PWM
 		 if (count1 >= COUNTS_TO_UPDATE){
-			 TIM3->CCR1 = (uint16_t)pwmValues1[selectedIndex1];
-			 count1 = 0;
+			 if ((HAL_GetTick() - out1ChangeTime) > OUTPUT_HOLD_TICKS) {
+				 if (TIM3->CCR1 != (uint16_t)pwmValues1[selectedIndex1]) {
+					 TIM3->CCR1 = (uint16_t)pwmValues1[selectedIndex1];
+					 out1ChangeTime = HAL_GetTick();
+				}
+				 count1 = 0;
+			 } else {
+				 count1 = COUNTS_TO_UPDATE;
+			 }
 		 }
 
 		 if (count2 >= COUNTS_TO_UPDATE){
-			 TIM3->CCR2 = (uint16_t)pwmValues2[selectedIndex2];
-			 count2 = 0;
+			 if ((HAL_GetTick() - out2ChangeTime) > OUTPUT_HOLD_TICKS)  {
+				 if (TIM3->CCR2 != (uint16_t)pwmValues2[selectedIndex2]) {
+					 TIM3->CCR2 = (uint16_t)pwmValues2[selectedIndex2];
+					 out2ChangeTime = HAL_GetTick();
+				 }
+				 count2 = 0;
+			 } else {
+				 count2 = COUNTS_TO_UPDATE;
+			 }
 		 }
 	 }
+
+	 //Auxiliary inputs:
+
+	 currentEncoder = TIM2->CNT;
+	 if (prevEncoder < currentEncoder) {
+		 volIncreaseCnt += (currentEncoder - prevEncoder);
+		 volDecreaseCnt = 0;
+	 } else if (prevEncoder > currentEncoder) {
+		 volDecreaseCnt += (prevEncoder - currentEncoder);
+		 volIncreaseCnt = 0;
+	 }
+
+	 //Center encoder if close to edges
+	 if ((currentEncoder < 10000) || (currentEncoder > 55000)){
+		 TIM2->CNT = 32768 + (int)(TIM2->CNT - currentEncoder);
+		 currentEncoder = 32768;
+	 }
+	 prevEncoder = currentEncoder;
+
+	 if (LL_GPIO_IsInputPinSet(Mute_Btn_GPIO_Port, Mute_Btn_Pin)) {
+			 muteCount++;
+	 } else {
+		 muteCount = 0;
+	 }
+
+	 if (LL_GPIO_IsInputPinSet(FWD_Btn_GPIO_Port, FWD_Btn_Pin)) {
+		 fwdCount++;
+	 } else {
+		 fwdCount = 0;
+	 }
+
+	 if (LL_GPIO_IsInputPinSet(REV_Btn_GPIO_Port, REV_Btn_Pin)) {
+		 revCount++;
+	 } else {
+		 revCount = 0;
+	 }
+
+	 if (muteCount > MIN_BTN_COUNT) {
+		 doMute = 1;
+	 } else if (fwdCount > MIN_BTN_COUNT) {
+		 doFwd = 1;
+	 } else if (revCount > MIN_BTN_COUNT) {
+		 doRev = 1;
+	 }
+
+	 if (doMute || doFwd || doRev) {
+		 muteCount = 0;
+		 fwdCount = 0;
+		 revCount = 0;
+	 }
+	 // output 1
+	 if ((HAL_GetTick() - out1ChangeTime) > OUTPUT_HOLD_TICKS) {
+		 if (volReleaseFlag) {
+			 TIM3->CCR1 = (uint16_t)pwmValues1[DEFAULT_INDEX1];
+			 out1ChangeTime = HAL_GetTick();
+			 volReleaseFlag = 0;
+		 } else if (volIncreaseCnt){
+			 TIM3->CCR1 = (uint16_t)pwmValues1[VOL_INCR_INDEX];
+			 out1ChangeTime = HAL_GetTick();
+			 volIncreaseCnt--;
+			 volReleaseFlag = 1;
+		 } else if (volDecreaseCnt){
+			 TIM3->CCR1 = (uint16_t)pwmValues1[VOL_INCR_INDEX];
+			 out1ChangeTime = HAL_GetTick();
+			 volDecreaseCnt--;
+			 volReleaseFlag = 1;
+		 } else if (doMute) {
+			 TIM3->CCR1 = (uint16_t)pwmValues1[MUTE_INDEX];
+			 out1ChangeTime = HAL_GetTick();
+			 doMute = 0;
+		 } else if (doFwd) {
+			 TIM3->CCR1 = (uint16_t)pwmValues1[FWD_INDEX];
+			 out1ChangeTime = HAL_GetTick();
+			 doFwd = 0;
+		 } else if (doRev) {
+			 TIM3->CCR1 = (uint16_t)pwmValues1[REV_INDEX];
+			 out1ChangeTime = HAL_GetTick();
+			 doRev = 0;
+		 } else if (TIM3->CCR1 != (uint16_t)pwmValues1[DEFAULT_INDEX1]){
+			 TIM3->CCR1 = (uint16_t)pwmValues1[DEFAULT_INDEX1];
+			 out1ChangeTime = HAL_GetTick();
+		 }
+	 }
+	 // output 2
+	 if ((HAL_GetTick() - out2ChangeTime) > OUTPUT_HOLD_TICKS)  {
+		 if (TIM3->CCR2 != (uint16_t)pwmValues1[DEFAULT_INDEX2]) {
+			 TIM3->CCR2 = (uint16_t)pwmValues1[DEFAULT_INDEX2];
+			 out2ChangeTime = HAL_GetTick();
+		 }
+	 }
+
 
 
     /* USER CODE END WHILE */
